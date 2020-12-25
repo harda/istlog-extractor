@@ -5,42 +5,48 @@ import (
 	"database/sql"
 	"log"
 	"os"
-	"strings"
 
-	_ "github.com/go-sql-driver/mysql"
+	// _ "github.com/go-sql-driver/mysql"
+	_ "github.com/sijms/go-ora"
 
 	"fmt"
 )
 
 type shclog struct {
-	id        int
-	pan       sql.NullString
-	acquirer  sql.NullString
-	amount    int
-	issuer    sql.NullString
-	localdate sql.NullString
-	localtime int
-	trace     int
-	refnum    sql.NullString
-	termid    sql.NullString
+	pan      sql.NullString
+	acquirer sql.NullString
+	// amount    int
+	issuer sql.NullString
+	// localdate sql.NullString
+	// localtime int
+	// trace    int
+	refnum sql.NullString
+	termid sql.NullString
+	// respcode int
 }
 
 type Shclogs []shclog
 
 func main() {
 
-	fmt.Fprintf(os.Stderr, "command: %s %s\n", os.Args[0], os.Args[1])
+	if len(os.Args) < 2 {
+		fmt.Println("Parameter error, please type the correct syntax!")
+	}
+	dateStr := os.Args[1]
 
-	db, err := sql.Open("mysql", "root:r00t@tcp([127.0.0.1]:3306)/test")
+	// db, err := sql.Open("mysql", "root:r00t@tcp([127.0.0.1]:3306)/test")
+	// if err != nil {
+	// 	log.Fatal("Could not connect, error ", err.Error())
+	// }
+	// defer db.Close()
+
+	db, err := sql.Open("oracle", "oracle://ist77:ist77@10.10.77.39:1521/orcl")
 	if err != nil {
 		log.Fatal("Could not connect, error ", err.Error())
 	}
 	defer db.Close()
 
-	cw := GetShclogById(db, 1)
-	fmt.Println(cw)
-
-	ca := GetShclogAll(db, []string{"'500100'", "'600100'"})
+	ca := GetShclogAll(db, dateStr)
 	fmt.Println("got the result")
 	fmt.Println(ca)
 
@@ -52,7 +58,7 @@ func main() {
 	writebuffer := bufio.NewWriter(file1)
 	for i := 0; i < len(ca); i++ {
 		writebuffer.WriteString(fmt.Sprintln("File", GetValueWithSpace(ca[i].acquirer, 20), GetValueWithSpace(ca[i].termid, 20),
-			GetValueWithSpace(ca[i].issuer, 20), ca[i].amount))
+			GetValueWithSpace(ca[i].issuer, 20)))
 	}
 	writebuffer.Flush()
 
@@ -75,11 +81,23 @@ func GetValueWithSpace(value sql.NullString, lenght int) string {
 	return result
 }
 
-func GetShclogAll(db *sql.DB, acquirer []string) Shclogs {
+func GetShclogAll(db *sql.DB, dateStr string) Shclogs {
 
-	Qs := fmt.Sprintf("SELECT id,Acquirer, Issuer, Amount,Termid from SHCLOG where Acquirer in (%s);", strings.Join(acquirer, ","))
+	stmt, err := db.Prepare("SELECT pan, Acquirer, Issuer, refnum,Termid from SHCLOG_REQ where MSGTYPE=210")
+	if err != nil {
+		log.Fatal("Could prepare statement ", err)
+	}
+	defer stmt.Close()
 
-	rows, err := db.Query(Qs)
+	//mysql
+	// Qs := fmt.Sprintf("SELECT pan, Acquirer, Issuer, refnum,Termid from SHCLOG_REQ where LOCAL_DATE = TO_DATE(%s,'DD-MM-YYYY') AND MSGTYPE=210;", dateStr)
+	// rows, err := db.Query(Qs)
+	// if err != nil {
+	// 	log.Fatal("Could not get data from the Shclog table ", err)
+	// }
+	// defer rows.Close()
+
+	rows, err := stmt.Query()
 	if err != nil {
 		log.Fatal("Could not get data from the Shclog table ", err)
 	}
@@ -91,7 +109,7 @@ func GetShclogAll(db *sql.DB, acquirer []string) Shclogs {
 
 	for rows.Next() {
 		member := shclog{}
-		err = rows.Scan(&member.id, &member.acquirer, &member.issuer, &member.amount, &member.termid)
+		err = rows.Scan(&member.pan, &member.acquirer, &member.issuer, &member.termid)
 		if err != nil {
 			log.Fatal("Error scanning row", err)
 		}
@@ -102,15 +120,4 @@ func GetShclogAll(db *sql.DB, acquirer []string) Shclogs {
 		log.Fatal(err)
 	}
 	return retVal
-}
-
-func GetShclogById(db *sql.DB, id int) (cm shclog) {
-	row := db.QueryRow("Select id, acquirer, amount, issuer, local_time, trace, refnum, termid from SHCLOG where id = ?", id)
-
-	err := row.Scan(&cm.id, &cm.acquirer, &cm.amount, &cm.issuer, &cm.localtime, &cm.trace, &cm.refnum, &cm.termid)
-	if err != nil {
-		fmt.Println("error!!")
-		log.Fatal(err)
-	}
-	return
 }
